@@ -1,0 +1,56 @@
+name: EarlyOz EarlyApply
+
+# Manual only for now. The schedule is added once the runner is verified,
+# so subscribers never get duplicate emails from two places.
+on:
+  workflow_dispatch:
+    inputs:
+      only_email:
+        description: "Test mode: run for this one subscriber email only (blank = everyone)"
+        required: false
+        default: ""
+      max_age_days:
+        description: "Test mode: look back this many days (blank = 1)"
+        required: false
+        default: ""
+
+concurrency:
+  group: earlyapply
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out private code
+        uses: actions/checkout@v4
+        with:
+          repository: OzSpidey/EarlyOz_EarlyApply
+          token: ${{ secrets.PRIVATE_REPO_PAT }}
+          ref: master
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run scraper
+        env:
+          EMAIL_SENDER:       ${{ secrets.EMAIL_SENDER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          SHEET_ID:           ${{ secrets.SHEET_ID }}
+          SHEET_GID:          ${{ secrets.SHEET_GID }}
+          ONLY_EMAIL:         ${{ github.event.inputs.only_email }}
+          MAX_AGE_DAYS:       ${{ github.event.inputs.max_age_days }}
+        run: python scraper.py
+
+      - name: Commit updated seen IDs back to the private repo
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add seen/
+          git diff --cached --quiet || git commit -m "chore: update seen job IDs [skip ci]"
+          git pull --rebase origin master
+          git push
