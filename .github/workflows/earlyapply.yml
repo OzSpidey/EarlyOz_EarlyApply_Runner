@@ -13,10 +13,6 @@ on:
         description: "Test mode: look back this many days (blank = 1, or 3 on Mondays)"
         required: false
         default: ""
-      greenhouse:
-        description: "auto = by time of day (always on for only_email tests), yes = force on, no = skip"
-        required: false
-        default: "auto"
 
 concurrency:
   group: earlyapply
@@ -33,47 +29,16 @@ env:
   DISABLED_PORTALS:   ${{ vars.DISABLED_PORTALS }}
 
 jobs:
-  plan:
-    name: plan portals
-    runs-on: ubuntu-latest
-    outputs:
-      portals: ${{ steps.p.outputs.portals }}
-      skipped: ${{ steps.p.outputs.skipped }}
-    steps:
-      - id: p
-        # Greenhouse is the heavy portal (6.5k boards, ~1000 requests/min/IP limit), so it is split
-        # into GREENHOUSE_SHARDS parallel jobs (default 3), one IP each. Hours (ET) come from repo
-        # variable GREENHOUSE_HOURS_ET (currently every hour = every run).
-        env:
-          HOURS: ${{ vars.GREENHOUSE_HOURS_ET || '9,13,17' }}
-          ONLY:  ${{ github.event.inputs.only_email }}
-          GH:    ${{ github.event.inputs.greenhouse }}
-          SHARDS: ${{ vars.GREENHOUSE_SHARDS || '3' }}
-        run: |
-          hour=$(TZ=America/New_York date +%-H)
-          portals='["workday","lever","apple","ashby","amazon"'
-          skipped=""
-          if [ "$GH" = "yes" ] || { [ "$GH" != "no" ] && { [ -n "$ONLY" ] || echo ",$HOURS," | grep -q ",$hour,"; }; }; then
-            for i in $(seq 1 "$SHARDS"); do
-              portals="$portals,\"greenhouse-${i}of${SHARDS}\""
-            done
-          else
-            skipped="greenhouse"
-          fi
-          portals="$portals]"
-          echo "ET hour=$hour -> portals=$portals skipped=$skipped"
-          echo "portals=$portals" >> "$GITHUB_OUTPUT"
-          echo "skipped=$skipped" >> "$GITHUB_OUTPUT"
-
   scrape:
     name: scrape ${{ matrix.portal }}
-    needs: plan
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
-        portal: ${{ fromJSON(needs.plan.outputs.portals) }}
+        # Greenhouse is split into 3 shards (one IP each): its API allows ~1000 requests/min per IP.
+        # To change the shard count, edit all three names (greenhouse-<i>of<n>).
+        portal: [workday, lever, apple, ashby, amazon, greenhouse-1of3, greenhouse-2of3, greenhouse-3of3]
     steps:
       - name: Check out private code
         uses: actions/checkout@v4
@@ -104,7 +69,7 @@ jobs:
 
   send:
     name: match and email
-    needs: [plan, scrape]
+    needs: scrape
     # run even if a portal's scrape job failed; the pool just misses that portal
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
@@ -134,9 +99,6 @@ jobs:
           merge-multiple: true
 
       - name: Match roles and send emails
-        env:
-          # portals skipped by the plan are not flagged as failures
-          DISABLED_PORTALS: ${{ vars.DISABLED_PORTALS }},${{ needs.plan.outputs.skipped }}
         run: python scraper.py send
 
       - name: Commit updated seen IDs back to the private repo
