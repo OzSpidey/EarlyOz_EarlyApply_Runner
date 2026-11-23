@@ -43,16 +43,20 @@ jobs:
                                 if k.lower() in ("server","via","x-cache","retry-after","content-type","x-amzn-errortype","x-amz-cf-pop","x-ratelimit-limit","x-ratelimit-remaining","x-ratelimit-reset","cf-ray")),
                                 r.text[:300].replace(slug, "<slug>"))
               return c
-          pos = 0
-          for conc, n in [(5,100),(10,150),(20,200),(40,300),(80,400)]:
-              batch = slugs[pos:pos+n]; pos += n
+          CHUNK, CONC = 500, 40
+          bad_streak = 0
+          t0 = time.time()
+          for i in range(0, len(slugs), CHUNK):
+              batch = slugs[i:i+CHUNK]
               t = time.time()
-              with ThreadPoolExecutor(conc) as ex:
+              with ThreadPoolExecutor(CONC) as ex:
                   res = list(ex.map(hit, batch))
-              dt = time.time() - t
               cnt = Counter(res)
-              print(f"concurrency {conc:3d}: {n} boards in {dt:5.1f}s ({n/dt:5.1f}/s) -> {dict(cnt)}", flush=True)
-              time.sleep(30)
+              refused = cnt.get(403, 0) + cnt.get(429, 0)
+              print(f"req {i:5d}-{i+len(batch):5d} (t+{time.time()-t0:5.1f}s, chunk {time.time()-t:4.1f}s): {dict(cnt)}", flush=True)
+              bad_streak = bad_streak + 1 if refused > len(batch) / 2 else 0
+              if bad_streak >= 2:
+                  print("stopping: majority refused for 2 chunks in a row"); break
           for c, (h, b) in samples.items():
               print(f"\nSAMPLE {c} headers: {h}\nSAMPLE {c} body: {b}")
           PY
