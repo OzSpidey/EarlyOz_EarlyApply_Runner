@@ -43,20 +43,24 @@ jobs:
                                 if k.lower() in ("server","via","x-cache","retry-after","content-type","x-amzn-errortype","x-amz-cf-pop","x-ratelimit-limit","x-ratelimit-remaining","x-ratelimit-reset","cf-ray")),
                                 r.text[:300].replace(slug, "<slug>"))
               return c
-          CHUNK, CONC = 500, 40
-          bad_streak = 0
-          t0 = time.time()
-          for i in range(0, len(slugs), CHUNK):
-              batch = slugs[i:i+CHUNK]
-              t = time.time()
-              with ThreadPoolExecutor(CONC) as ex:
-                  res = list(ex.map(hit, batch))
+          from concurrent.futures import ThreadPoolExecutor as TPE
+          pool = TPE(150)
+          idx = 0
+          time.sleep(90)   # cool-down from previous test
+          for rate, dur in [(20, 30), (40, 30), (70, 30), (100, 30)]:
+              futs, t0 = [], time.time()
+              total = rate * dur
+              for k in range(total):
+                  target = t0 + k / rate
+                  d = target - time.time()
+                  if d > 0: time.sleep(d)
+                  futs.append(pool.submit(hit, slugs[idx % len(slugs)])); idx += 1
+              res = [f.result() for f in futs]
               cnt = Counter(res)
-              refused = cnt.get(403, 0) + cnt.get(429, 0)
-              print(f"req {i:5d}-{i+len(batch):5d} (t+{time.time()-t0:5.1f}s, chunk {time.time()-t:4.1f}s): {dict(cnt)}", flush=True)
-              bad_streak = bad_streak + 1 if refused > len(batch) / 2 else 0
-              if bad_streak >= 2:
-                  print("stopping: majority refused for 2 chunks in a row"); break
+              print(f"rate {rate:3d}/s for {dur}s ({total} req, actual {total/(time.time()-t0):5.1f}/s): {dict(cnt)}", flush=True)
+              if cnt.get(429, 0) + cnt.get(403, 0) > total * 0.05:
+                  print("refusals above 5% at this rate; stopping ramp"); break
+              time.sleep(60)
           for c, (h, b) in samples.items():
               print(f"\nSAMPLE {c} headers: {h}\nSAMPLE {c} body: {b}")
           PY
