@@ -41,19 +41,22 @@ jobs:
       skipped: ${{ steps.p.outputs.skipped }}
     steps:
       - id: p
-        # Greenhouse is the heavy portal (7k boards, rate-limited), so it only runs in some
-        # of the day's runs. Hours (ET) come from repo variable GREENHOUSE_HOURS_ET,
-        # default "9,13,17". A manual test run (only_email set) always includes it.
+        # Greenhouse is the heavy portal (6.5k boards, ~1000 requests/min/IP limit), so it is split
+        # into GREENHOUSE_SHARDS parallel jobs (default 3), one IP each. Hours (ET) come from repo
+        # variable GREENHOUSE_HOURS_ET (currently every hour = every run).
         env:
           HOURS: ${{ vars.GREENHOUSE_HOURS_ET || '9,13,17' }}
           ONLY:  ${{ github.event.inputs.only_email }}
           GH:    ${{ github.event.inputs.greenhouse }}
+          SHARDS: ${{ vars.GREENHOUSE_SHARDS || '3' }}
         run: |
           hour=$(TZ=America/New_York date +%-H)
           portals='["workday","lever","apple","ashby","amazon"'
           skipped=""
           if [ "$GH" = "yes" ] || { [ "$GH" != "no" ] && { [ -n "$ONLY" ] || echo ",$HOURS," | grep -q ",$hour,"; }; }; then
-            portals="$portals,\"greenhouse\""
+            for i in $(seq 1 "$SHARDS"); do
+              portals="$portals,\"greenhouse-${i}of${SHARDS}\""
+            done
           else
             skipped="greenhouse"
           fi
