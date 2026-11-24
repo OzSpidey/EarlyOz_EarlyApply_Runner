@@ -38,7 +38,7 @@ jobs:
       matrix:
         # Greenhouse is split into 5 shards (one IP each): its API allows ~1000 requests/min per IP.
         # To change a shard count, edit its names (<portal>-<i>of<n>), e.g. greenhouse-1of3, workday-1of4.
-        portal: [workday-1of4, workday-2of4, workday-3of4, workday-4of4, lever, apple, ashby, amazon, linkedin-1of2, linkedin-2of2, greenhouse-1of5, greenhouse-2of5, greenhouse-3of5, greenhouse-4of5, greenhouse-5of5]
+        portal: [workday-1of4, workday-2of4, workday-3of4, workday-4of4, lever, apple, ashby, amazon, oracle, linkedin-1of2, linkedin-2of2, greenhouse-1of5, greenhouse-2of5, greenhouse-3of5, greenhouse-4of5, greenhouse-5of5]
     steps:
       - name: Check out private code
         uses: actions/checkout@v4
